@@ -230,6 +230,7 @@ function initSync(){
 function isDone(a){return prog[a.no]&&prog[a.no].last==='o'}
 function inStar(a){return a.stars>=cfg.star}
 function pool(fn){return A.filter(function(a){return a.nb>0&&inStar(a)&&(!fn||fn(a))})}
+function wrongList(){return A.filter(function(a){var p=prog[a.no];return a.nb>0&&p&&p.last==='x'})}
 function reviewList(){var t=today();return A.filter(function(a){var p=prog[a.no];return a.nb>0&&p&&p.due<=t})}
 
 function h(tag,attrs){
@@ -372,6 +373,10 @@ function home(){
   w.append(h('h2',null,'복습'));
   w.append(h('button',{class:'btn'+(rv.length?'':' ghost'),onclick:function(){startDeck('복습',rv,0)}},
     rv.length?('오늘 복습 '+rv.length+'개 시작'):'복습할 조문이 없어요 (✗/✓를 누르면 쌓여요)'));
+  var wl=wrongList();
+  w.append(h('button',{class:'btn ghost',style:'margin-top:8px'+(wl.length?';border-color:var(--ng);color:var(--ng)':''),onclick:function(){startDeck('✗ 틀린 조문',wrongList(),0)}},
+    wl.length?('✗ 틀린 조문만 다시 보기 ('+wl.length+'개)'):'✗ 틀린 조문이 없어요'));
+  w.append(h('p',{class:'hint'},'틀린 조문은 ✓ 외움을 누르면 목록에서 빠져요.'));
 
   w.append(h('h2',null,'한달 1독 진도표 (특허)'));
   var rec=sessionRec(),g=h('div',{class:'grid'});
@@ -459,6 +464,7 @@ function study(keepTts){
     h('span',{class:'no'},a.no),
     h('span',{class:'ti'},segNodes(a.title,upd)),
     h('span',{class:'st'},'★'.repeat(a.stars)),
+    (prog[a.no]&&prog[a.no].last)?h('span',{style:'font-size:.75em;color:'+(prog[a.no].last==='x'?'var(--ng)':'var(--ok)')},prog[a.no].last==='x'?'✗ 틀렸던 조문':'✓ 외운 조문'):null,
     h('div',{class:'chap'},a.chap));
   card.append(head);
   a.paras.forEach(function(p){card.append(h('p',{class:'p l'+p.lvl},segNodes(p.segs,upd)))});
@@ -510,6 +516,7 @@ function finish(){
     h('p',null,'✓ 외움 '+d+'개 · ✗ 헷갈림 '+x+'개 / 전체 '+deck.list.length+'개')),
     h('div',{class:'grid'},
       h('button',{class:'btn',onclick:function(){var l=deck.list.filter(function(a){return !isDone(a)});if(l.length)startDeck(deck.label+' (남은 것)',l,0);else toast('모두 ✓ 상태예요')}},'✗/아직 안 본 것만 다시'),
+      h('button',{class:'btn ghost',onclick:function(){var l=deck.list.filter(function(a){var p=prog[a.no];return p&&p.last==='x'});if(l.length)startDeck(deck.label+' (✗만)',l,0);else toast('✗ 표시한 조문이 없어요')}},'✗ 틀린 것만 다시'),
       h('button',{class:'btn ghost',onclick:function(){deck.pos=0;study()}},'처음부터 다시'),
       h('button',{class:'btn ghost',onclick:home},'홈으로')));
   mount(w);
