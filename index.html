@@ -93,9 +93,11 @@ var LS={
   set:function(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
 };
 var prog=LS.get('pt_prog',{});
-var cfg=Object.assign({fs:17,star:0,start:'',rate:1},LS.get('pt_cfg',{}));
-function saveCfg(){LS.set('pt_cfg',cfg);document.documentElement.style.setProperty('--fs',cfg.fs+'px')}
-saveCfg();
+var resetAt=LS.get('pt_reset',0);
+var cfg=Object.assign({fs:17,star:0,start:'',rate:1,t:0},LS.get('pt_cfg',{}));
+function applyCfg(){document.documentElement.style.setProperty('--fs',cfg.fs+'px')}
+function saveCfg(){cfg.t=Date.now();LS.set('pt_cfg',cfg);applyCfg();touch()}
+applyCfg();
 
 function today(){var t=new Date(Date.now()-4*36e5);return Math.floor((t.getTime()-t.getTimezoneOffset()*6e4)/864e5)}
 var INT=[0,1,3,7,14,30];
@@ -104,7 +106,126 @@ function mark(no,ok){
   p.seen=(p.seen||0)+1;
   if(ok){p.box=Math.min(5,(p.box||0)+1);p.due=today()+INT[p.box];p.last='o'}
   else{p.box=0;p.due=today();p.last='x'}
-  prog[no]=p;LS.set('pt_prog',prog);
+  p.t=Date.now();
+  prog[no]=p;LS.set('pt_prog',prog);touch();
+}
+function resetProg(){prog={};resetAt=Date.now();LS.set('pt_prog',prog);LS.set('pt_reset',resetAt);touch()}
+
+/* ---------- 계정 동기화 (db) ---------- */
+var sync={set:null,unsub:null,login:null,logout:null,ready:false,busy:false,dirty:false,timer:null,status:'local'};
+var FBCFG={apiKey:'AIzaSyAgDy1BxRRotCU9aB_rUqqSBK5jVpmNPOc',authDomain:'lawblank-b264c.firebaseapp.com',projectId:'lawblank-b264c',storageBucket:'lawblank-b264c.firebasestorage.app',messagingSenderId:'843029641588',appId:'1:843029641588:web:36db256b48232a0993d421'};
+function setStatus(st){
+  sync.status=st;
+  var el=document.getElementById('syncst');if(!el)return;
+  var m={local:'📱 이 기기에만 저장 중 (계정에 저장하려면 로그인이 필요해요)',wait:'☁️ 계정 연결 중…',on:'☁️ 계정에 저장 중 · 다른 기기와 연동돼요',slow:'☁️ 연결이 느려요. 이 기기에는 저장되고 있어요',err:'⚠️ 계정 저장에 실패했어요. 이 기기에는 저장돼요',login:'📱 지금은 이 기기에만 저장돼요. 로그인하면 기기끼리 이어져요'};
+  el.textContent=m[st]||'';
+  var bx=document.getElementById('syncbtn');
+  if(bx){bx.textContent='';
+    if(st==='login'&&sync.login)bx.append(h('button',{class:'btn',style:'margin-top:8px',onclick:function(){sync.login()}},'Google로 로그인'))}
+}
+function touch(){
+  if(!sync.ready)return;
+  clearTimeout(sync.timer);sync.timer=setTimeout(flush,1200);
+}
+function flush(){
+  if(!sync.set||!sync.ready)return;
+  if(sync.busy){sync.dirty=true;return}
+  sync.busy=true;
+  var body=JSON.parse(JSON.stringify({prog:prog,cfg:cfg,resetAt:resetAt,u:Date.now()}));
+  sync.set(body).then(function(){setStatus('on')},function(){setStatus('err')}).then(function(){
+    sync.busy=false;if(sync.dirty){sync.dirty=false;flush()}
+  });
+}
+function mergeRemote(r){
+  r=r||{};
+  var needWrite=false,changed=false;
+  var rr=r.resetAt||0;
+  if(rr>resetAt){resetAt=rr;LS.set('pt_reset',resetAt);prog={};changed=true}
+  else if(rr<resetAt)needWrite=true;
+  Object.keys(prog).forEach(function(k){if((prog[k].t||0)<resetAt&&resetAt>0){delete prog[k];changed=true}});
+  var rp=r.prog||{};
+  Object.keys(rp).forEach(function(k){
+    var a=rp[k],b=prog[k];
+    if((a.t||0)<resetAt&&resetAt>0)return;
+    if(!b||(a.t||0)>(b.t||0)){prog[k]=a;changed=true}
+    else if((b.t||0)>(a.t||0))needWrite=true;
+  });
+  Object.keys(prog).forEach(function(k){if(!rp[k])needWrite=true});
+  var rc=r.cfg;
+  if(rc&&(rc.t||0)>(cfg.t||0)){cfg=Object.assign({},cfg,rc);changed=true;LS.set('pt_cfg',cfg);applyCfg()}
+  else if(!rc||(cfg.t||0)>(rc.t||0))needWrite=true;
+  if(changed)LS.set('pt_prog',prog);
+  return {changed:changed,needWrite:needWrite};
+}
+function stopSync(){
+  if(sync.unsub){try{sync.unsub()}catch(e){}}
+  sync.unsub=null;sync.ready=false;sync.set=null;clearTimeout(sync.timer);
+}
+function startSync(bk){
+  stopSync();
+  sync.set=bk.set;
+  setStatus('wait');
+  var tm=setTimeout(function(){if(!sync.ready)setStatus('slow')},10000);
+  sync.unsub=bk.listen(function(d,exists,fromCache){
+    if(fromCache&&!sync.ready)return;
+    clearTimeout(tm);
+    var r=mergeRemote(d);
+    var first=!sync.ready;sync.ready=true;
+    if(first){setStatus('on');if(r.needWrite||!exists)flush()}
+    if((r.changed||first)&&view==='home'){
+      var ae=document.activeElement;
+      if(!(ae&&ae.tagName==='INPUT'&&ae.type==='search'&&ae.value))home();
+    }
+  },function(){setStatus('err')});
+}
+function initClaude(){
+  setStatus('wait');
+  Promise.all([window.claude.use('db'),window.claude.use('user')]).then(function(x){
+    var db=x[0],user=x[1];
+    if(!db||!user){setStatus('local');return}
+    return user.id().then(function(id){
+      if(!id){setStatus('local');return}
+      var ref=db.doc('data/users/'+id+'/state');
+      startSync({
+        set:function(body){return ref.set(body)},
+        listen:function(cb,err){return ref.onSnapshot(function(sn){cb(sn.exists?sn.data():{},sn.exists,!!(sn.metadata&&sn.metadata.fromCache))},err)}
+      });
+    });
+  }).catch(function(){setStatus('local')});
+}
+function loadScript(src){return new Promise(function(res,rej){var e=document.createElement('script');e.src=src;e.onload=res;e.onerror=rej;document.head.append(e)})}
+function initFirebase(){
+  var base='https://www.gstatic.com/firebasejs/10.12.2/';
+  setStatus('wait');
+  loadScript(base+'firebase-app-compat.js').then(function(){return loadScript(base+'firebase-auth-compat.js')}).then(function(){return loadScript(base+'firebase-firestore-compat.js')}).then(function(){
+    var fb=window.firebase;fb.initializeApp(FBCFG);
+    var auth=fb.auth(),fs=fb.firestore();
+    sync.login=function(){
+      var pr=new fb.auth.GoogleAuthProvider();
+      auth.signInWithPopup(pr).catch(function(e){
+        var c=e&&e.code;
+        if(c==='auth/popup-blocked'||c==='auth/operation-not-supported-in-this-environment'||c==='auth/web-storage-unsupported')auth.signInWithRedirect(pr);
+        else if(c!=='auth/popup-closed-by-user'&&c!=='auth/cancelled-popup-request')toast('로그인 실패 ('+(c||'알 수 없음')+')');
+      });
+    };
+    sync.logout=function(){auth.signOut()};
+    try{auth.getRedirectResult().catch(function(){})}catch(e){}
+    auth.onAuthStateChanged(function(u){
+      if(!u){stopSync();setStatus('login');if(view==='home')home();return}
+      var ref=fs.collection('patentBlank').doc(u.uid);
+      startSync({
+        set:function(body){return ref.set(body)},
+        listen:function(cb,err){return ref.onSnapshot(function(sn){cb(sn.exists?sn.data():{},sn.exists,!!sn.metadata.fromCache)},err)}
+      });
+      if(view==='home')home();
+    });
+  }).catch(function(){setStatus('local')});
+}
+function initSync(){
+  try{
+    if(window.claude&&window.claude.use)initClaude();
+    else initFirebase();
+  }catch(e){setStatus('local')}
 }
 function isDone(a){return prog[a.no]&&prog[a.no].last==='o'}
 function inStar(a){return a.stars>=cfg.star}
@@ -239,7 +360,8 @@ function home(){
   stopTTS();view='home';deck=null;ttsBtn=null;
   var w=h('div',{class:'wrap'});
   w.append(h('h1',null,'특허법 조문 빈칸'),
-    h('p',{class:'sub'},'조문 '+A.length+'개 · 빈칸 '+TOTALBL+'개 · 빈칸을 탭하면 정답이 나와요'));
+    h('p',{class:'sub'},'조문 '+A.length+'개 · 빈칸 '+TOTALBL+'개 · 빈칸을 탭하면 정답이 나와요'),
+    h('p',{class:'sub',id:'syncst',style:'margin-top:4px'}),h('div',{id:'syncbtn'}));
   var chips=h('div',{class:'chips'});
   [[0,'전체'],[2,'★★ 이상'],[3,'★★★만']].forEach(function(c){
     chips.append(h('button',{class:'chip'+(cfg.star===c[0]?' on':''),onclick:function(){cfg.star=c[0];saveCfg();home()}},c[1]));
@@ -303,11 +425,13 @@ function home(){
   var armed=false;
   rs.addEventListener('click',function(){
     if(!armed){armed=true;rs.textContent='정말 지울까요? 한 번 더 누르면 삭제';return}
-    prog={};LS.set('pt_prog',prog);home();
+    resetProg();home();
   });
   w.append(h('div',{style:'margin-top:14px'},rs));
-  w.append(h('p',{class:'hint'},'진도는 이 기기·이 브라우저에만 저장돼요. 학습 하루는 새벽 4시에 넘어가요.'));
+  if(sync.logout&&sync.ready)w.append(h('div',{style:'margin-top:8px'},h('button',{class:'btn ghost',onclick:function(){sync.logout()}},'계정 로그아웃')));
+  w.append(h('p',{class:'hint'},'로그인하면 진도·설정이 계정에 저장돼 기기끼리 이어져요. 학습 하루는 새벽 4시에 넘어가요.'));
   mount(w);
+  setStatus(sync.status);
 }
 
 function segNodes(segs,upd){
@@ -392,6 +516,7 @@ function finish(){
 }
 
 home();
+initSync();
 })();
 </script>
 </body>
