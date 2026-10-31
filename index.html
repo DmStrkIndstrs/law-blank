@@ -88,7 +88,7 @@ var LS={
 };
 var prog=LS.get('pt_prog',{});
 var resetAt=LS.get('pt_reset',0);
-var cfg=Object.assign({fs:17,star:0,start:'',rate:1,t:0},LS.get('pt_cfg',{}));
+var cfg=Object.assign({fs:17,star:0,start:'',rate:1,t:0,pos:{}},LS.get('pt_cfg',{}));
 function applyCfg(){document.documentElement.style.setProperty('--fs',cfg.fs+'px')}
 function saveCfg(){cfg.t=Date.now();LS.set('pt_cfg',cfg);applyCfg();touch()}
 applyCfg();
@@ -333,10 +333,14 @@ function run(q,i,tok,upd){
 /* ---------- views ---------- */
 var deck=null,view='home';
 
-function startDeck(label,list,pos){
+function startDeck(label,list,pos,chap){
   if(!list.length){toast('해당 조건에 맞는 조문이 없어요');return}
-  if(pos==null){pos=0;for(var i=0;i<list.length;i++){if(!isDone(list[i])){pos=i;break}}}
-  deck={label:label,list:list,pos:pos,rev:{}};
+  if(pos==null){
+    var last=cfg.pos&&cfg.pos[label];pos=-1;
+    if(last){for(var j=0;j<list.length;j++){if(list[j].no===last){pos=j;break}}}
+    if(pos<0){pos=0;for(var i=0;i<list.length;i++){if(!isDone(list[i])){pos=i;break}}}
+  }
+  deck={label:label,list:list,pos:pos,rev:{},chap:!!chap};
   study();
 }
 function pct(list){var d=0;list.forEach(function(a){if(isDone(a))d++});return list.length?Math.round(d*100/list.length):0}
@@ -374,7 +378,8 @@ function home(){
   CHAPS.forEach(function(c){
     var list=pool(function(a){return a.chap===c});
     var cw=0,cv=0;list.forEach(function(a){var s=st(a.no);if(s.v===2)cw++;else if(s.v===1)cv++});
-    if(list.length)g2.append(rowEl(c,list.length+'개 조문'+(cw?' · W '+cw:'')+(cv?' · V '+cv:''),list,function(){startDeck(c,list)}));
+    if(list.length)var lp=cfg.pos&&cfg.pos[c];
+    g2.append(rowEl(c,list.length+'개 조문'+(cw?' · W '+cw:'')+(cv?' · V '+cv:'')+(lp?' · 이어서 '+lp:''),list,function(){startDeck(c,list,null,true)}));
   });
   w.append(g2);
 
@@ -433,6 +438,7 @@ function segNodes(segs,upd){
 function study(keepTts){
   view='study';
   var a=deck.list[deck.pos];
+  if(deck.chap){if(!cfg.pos)cfg.pos={};if(cfg.pos[deck.label]!==a.no){cfg.pos[deck.label]=a.no;saveCfg()}}
   if(!keepTts)stopTTS();
   var cnt=h('div',{class:'cnt'});
   var card=h('article',{class:'card'});
@@ -493,6 +499,7 @@ function study(keepTts){
 }
 
 function finish(){
+  if(deck.chap&&cfg.pos&&cfg.pos[deck.label]){delete cfg.pos[deck.label];saveCfg()}
   var d=0,x=0;deck.list.forEach(function(a){var s=st(a.no);if(s.v>0)x++;else if(s.seen||s.x)d++});
   var w=h('div',{class:'wrap'},h('div',{class:'done'},
     h('div',{class:'big'},'🎉'),h('h1',null,'끝까지 봤어요'),
