@@ -58,6 +58,8 @@ input[type=search],input[type=date],select{width:100%;padding:11px 12px;border-r
 .done{text-align:center;padding:40px 10px}
 .done .big{font-size:44px}
 .hint{font-size:12.5px;color:var(--sub);margin:6px 2px}
+.badge{font-size:.72em;font-weight:800;border-radius:6px;padding:1px 7px;color:#fff}
+.bv{background:#e08a00}.bw{background:var(--ng)}.bx{background:#888}.bo{background:var(--ok)}
 </style>
 </head>
 <body>
@@ -92,15 +94,20 @@ function saveCfg(){cfg.t=Date.now();LS.set('pt_cfg',cfg);applyCfg();touch()}
 applyCfg();
 
 function today(){var t=new Date(Date.now()-4*36e5);return Math.floor((t.getTime()-t.getTimezoneOffset()*6e4)/864e5)}
-var INT=[0,1,3,7,14,30];
-function mark(no,ok){
-  var p=prog[no]||{box:0,due:0,seen:0};
-  p.seen=(p.seen||0)+1;
-  if(ok){p.box=Math.min(5,(p.box||0)+1);p.due=today()+INT[p.box];p.last='o'}
-  else{p.box=0;p.due=today();p.last='x'}
-  p.t=Date.now();
-  prog[no]=p;LS.set('pt_prog',prog);touch();
+function st(no){
+  var p=prog[no];if(!p)return {v:0,x:false,seen:0};
+  var v=(p.v!=null)?p.v:(p.last==='x'?1:0);
+  return {v:v,x:!!p.x,seen:p.seen||0};
 }
+function save(no,v,x){
+  var p=prog[no]||{};
+  prog[no]={v:v,x:x,seen:(p.seen||0)+1,t:Date.now()};
+  LS.set('pt_prog',prog);touch();
+}
+/* WOX 회독: 모르면 V 추가(V→W), 알면 V 하나 지움(W→V→없음), 완벽하면 X(제외) */
+function markWrong(no){var s=st(no);save(no,Math.min(2,s.v+1),false);return Math.min(2,s.v+1)}
+function markRight(no){var s=st(no);save(no,Math.max(0,s.v-1),false)}
+function markX(no){var s=st(no);save(no,0,!s.x);return !s.x}
 function resetProg(){prog={};resetAt=Date.now();LS.set('pt_prog',prog);LS.set('pt_reset',resetAt);touch()}
 
 /* ---------- 계정 동기화 (db) ---------- */
@@ -219,10 +226,10 @@ function initSync(){
     else initFirebase();
   }catch(e){setStatus('local')}
 }
-function isDone(a){return prog[a.no]&&prog[a.no].last==='o'}
+function isDone(a){var s=st(a.no);return s.x||(s.seen>0&&s.v===0)}
 function inStar(a){return a.stars>=cfg.star}
-function pool(fn){return A.filter(function(a){return a.nb>0&&inStar(a)&&(!fn||fn(a))})}
-function reviewList(){var t=today();return A.filter(function(a){var p=prog[a.no];return a.nb>0&&p&&p.due<=t})}
+function pool(fn){return A.filter(function(a){return a.nb>0&&inStar(a)&&(cfg.showX||!st(a.no).x)&&(!fn||fn(a))})}
+function reviewList(){var l=A.filter(function(a){var s=st(a.no);return a.nb>0&&s.v>0&&!s.x});return l.filter(function(a){return st(a.no).v===2}).concat(l.filter(function(a){return st(a.no).v===1}))}
 
 function h(tag,attrs){
   var e=document.createElement(tag);
@@ -239,7 +246,8 @@ function h(tag,attrs){
 var app=document.getElementById('app');
 function mount(n){app.textContent='';app.append(n);window.scrollTo(0,0)}
 function toast(msg){
-  var t=h('div',{class:'toast'},msg);document.body.append(t);setTimeout(function(){t.remove()},2600);
+  var o=document.querySelector('.toast');if(o)o.remove();
+  var t=h('div',{class:'toast'},msg);document.body.append(t);setTimeout(function(){t.remove()},1600);
 }
 
 /* ---------- TTS ---------- */
@@ -353,15 +361,18 @@ function home(){
 
   var rv=reviewList();
   w.append(h('h2',null,'복습'));
-  w.append(h('button',{class:'btn'+(rv.length?'':' ghost'),onclick:function(){startDeck('복습',rv,0)}},
-    rv.length?('복습 시작 · '+rv.length+'개 (✗ '+rv.filter(function(a){return prog[a.no].last==='x'}).length+')'):'복습할 조문이 없어요 (✗/✓를 누르면 쌓여요)'));
-  w.append(h('p',{class:'hint'},'✗ 헷갈림으로 표시한 조문은 ✓ 외움을 누를 때까지 계속 복습에 나와요. ✓는 1·3·7·14·30일 뒤에 다시 나와요.'));
+  var nW=rv.filter(function(a){return st(a.no).v===2}).length;
+  w.append(h('button',{class:'btn'+(rv.length?'':' ghost'),onclick:function(){startDeck('복습 (W→V)',rv,0)}},
+    rv.length?('복습 시작 · W '+nW+'개 · V '+(rv.length-nW)+'개'):'복습할 조문이 없어요 (V를 누르면 쌓여요)'));
+  if(nW)w.append(h('button',{class:'btn ghost',style:'margin-top:8px;border-color:var(--ng);color:var(--ng)',onclick:function(){startDeck('W만 (두 번 틀림)',reviewList().filter(function(a){return st(a.no).v===2}),0)}},'W만 보기 ('+nW+'개)'));
+  w.append(h('p',{class:'hint'},'WOX 회독 · 모르면 V (두 번째면 W) · 알면 표시 하나 지우기(W→V→없음) · 완벽하면 X로 빼기. 복습은 W부터 나와요.'));
 
   w.append(h('h2',null,'장별'));
   var g2=h('div',{class:'grid'});
   CHAPS.forEach(function(c){
     var list=pool(function(a){return a.chap===c});
-    if(list.length)g2.append(rowEl(c,list.length+'개 조문',list,function(){startDeck(c,list)}));
+    var cw=0,cv=0;list.forEach(function(a){var s=st(a.no);if(s.v===2)cw++;else if(s.v===1)cv++});
+    if(list.length)g2.append(rowEl(c,list.length+'개 조문'+(cw?' · W '+cw:'')+(cv?' · V '+cv:''),list,function(){startDeck(c,list)}));
   });
   w.append(g2);
 
@@ -384,6 +395,9 @@ function home(){
   w.append(inp,res);
 
   w.append(h('h2',null,'설정'));
+  var xc=h('input',{type:'checkbox'});xc.checked=!!cfg.showX;
+  xc.addEventListener('change',function(){cfg.showX=xc.checked;saveCfg();home()});
+  w.append(h('div',{class:'set'},h('label',null,'X 조문'),h('span',null,xc,' 장별 보기에 X(제외) 조문도 포함')));
   var fs=h('input',{type:'range',min:14,max:26,value:cfg.fs});
   fs.addEventListener('input',function(){cfg.fs=+fs.value;saveCfg()});
   w.append(h('div',{class:'set'},h('label',null,'글자 크기'),fs));
@@ -430,7 +444,7 @@ function study(keepTts){
     h('span',{class:'no'},a.no),
     h('span',{class:'ti'},segNodes(a.title,upd)),
     h('span',{class:'st'},'★'.repeat(a.stars)),
-    (prog[a.no]&&prog[a.no].last)?h('span',{style:'font-size:.75em;color:'+(prog[a.no].last==='x'?'var(--ng)':'var(--ok)')},prog[a.no].last==='x'?'✗ 틀렸던 조문':'✓ 외운 조문'):null,
+    (function(){var s=st(a.no);if(s.x)return h('span',{class:'badge bx'},'X');if(s.v===2)return h('span',{class:'badge bw'},'W');if(s.v===1)return h('span',{class:'badge bv'},'V');if(s.seen)return h('span',{class:'badge bo'},'✓');return null})(),
     h('div',{class:'chap'},a.chap));
   card.append(head);
   a.paras.forEach(function(p){card.append(h('p',{class:'p l'+p.lvl},segNodes(p.segs,upd)))});
@@ -459,9 +473,11 @@ function study(keepTts){
   }},ttsOn?'⏹ 멈춤':'🔊 듣기');
   var bb=h('div',{class:'bb'},h('div',{class:'in'},
     togBtn,ttsBtn,
-    h('button',{class:'ng',onclick:function(){mark(a.no,false);step(1)}},'✗ 헷갈림'),
-    h('button',{class:'ok',onclick:function(){mark(a.no,true);step(1)}},'✓ 외움')));
-  var w=h('div',null,top,h('div',{class:'wrap',style:'padding-top:4px'},card,cnt),bb);
+    h('button',{class:'ng',onclick:function(){var v=markWrong(a.no);toast(v===2?'W 표시 (두 번 틀림)':'V 표시');step(1)}},st(a.no).v>=1?'W 틀림':'V 틀림'),
+    h('button',{class:'ok',onclick:function(){var b=st(a.no).v;markRight(a.no);if(b)toast(b===2?'W → V':'V 지움');step(1)}},st(a.no).v?'✓ 하나 지움':'✓ 맞음')));
+  var xb=h('button',{class:'btn ghost',style:'margin-top:6px;font-size:14px;padding:10px'},st(a.no).x?'X 해제 (다시 보기)':'X 완벽해요 · 앞으로 빼기');
+  xb.addEventListener('click',function(){var on=markX(a.no);toast(on?'X: 장별 보기·복습에서 빠져요':'X 해제');step(1)});
+  var w=h('div',null,top,h('div',{class:'wrap',style:'padding-top:4px'},card,cnt,xb),bb);
 
   var x0=null,y0=null;
   w.addEventListener('touchstart',function(e){x0=e.touches[0].clientX;y0=e.touches[0].clientY},{passive:true});
@@ -475,13 +491,13 @@ function study(keepTts){
 }
 
 function finish(){
-  var d=0,x=0;deck.list.forEach(function(a){var p=prog[a.no];if(p&&p.last==='o')d++;else if(p&&p.last==='x')x++});
+  var d=0,x=0;deck.list.forEach(function(a){var s=st(a.no);if(s.v>0)x++;else if(s.seen||s.x)d++});
   var w=h('div',{class:'wrap'},h('div',{class:'done'},
     h('div',{class:'big'},'🎉'),h('h1',null,'끝까지 봤어요'),
     h('p',{class:'sub'},deck.label),
-    h('p',null,'✓ 외움 '+d+'개 · ✗ 헷갈림 '+x+'개 / 전체 '+deck.list.length+'개')),
+    h('p',null,'표시 없음/X '+d+'개 · V·W '+x+'개 / 전체 '+deck.list.length+'개')),
     h('div',{class:'grid'},
-      h('button',{class:'btn',onclick:function(){var l=deck.list.filter(function(a){return !isDone(a)});if(l.length)startDeck(deck.label+' (남은 것)',l,0);else toast('모두 ✓ 상태예요')}},'✗/아직 안 본 것만 다시'),
+      h('button',{class:'btn',onclick:function(){var l=deck.list.filter(function(a){var s=st(a.no);return !s.x&&(s.v>0||!s.seen)});if(l.length)startDeck(deck.label+' (V·W·안 본 것)',l,0);else toast('V·W 표시가 없어요')}},'V·W·안 본 것만 다시'),
       h('button',{class:'btn ghost',onclick:function(){deck.pos=0;study()}},'처음부터 다시'),
       h('button',{class:'btn ghost',onclick:home},'홈으로')));
   mount(w);
