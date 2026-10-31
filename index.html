@@ -333,12 +333,13 @@ function run(q,i,tok,upd){
 /* ---------- views ---------- */
 var deck=null,view='home';
 
+function isReview(l){return l==='V만 보기'||l==='W+V 보기'||l==='W+O 보기'}
 function startDeck(label,list,pos,chap){
   if(!list.length){toast('해당 조건에 맞는 조문이 없어요');return}
   if(pos==null){
     var last=cfg.pos&&cfg.pos[label];pos=-1;
     if(last){for(var j=0;j<list.length;j++){if(list[j].no===last){pos=j;break}}}
-    if(pos<0){pos=0;for(var i=0;i<list.length;i++){if(!isDone(list[i])){pos=i;break}}}
+    if(pos<0){pos=0;if(!isReview(label)){for(var i=0;i<list.length;i++){if(!isDone(list[i])){pos=i;break}}}}
   }
   deck={label:label,list:list,pos:pos,rev:{},chap:!!chap};
   study();
@@ -367,8 +368,8 @@ function home(){
   var live=pool(), lW=live.filter(function(a){return st(a.no).v===2}), lV=live.filter(function(a){return st(a.no).v===1}), lO=live.filter(function(a){return st(a.no).v===0});
   var g3=h('div',{class:'grid',style:'grid-template-columns:1fr;gap:8px'});
   [['V만 보기',lV,lV,'var(--acc)'],['W+V 보기',lW.concat(lV),lW.concat(lV),'var(--ng)'],['W+O 보기',lW.concat(lO),lW.concat(lO),'var(--ok)']].forEach(function(c){
-    g3.append(h('button',{class:'btn ghost',style:'text-align:left;display:flex;justify-content:space-between;border-color:'+c[3],onclick:function(){if(!c[1].length){toast('해당 조문이 없어요');return}startDeck(c[0],c[1],0)}},
-      h('span',null,c[0]),h('span',{style:'color:var(--sub);font-weight:500'},c[1].length+'개')));
+    g3.append(h('button',{class:'btn ghost',style:'text-align:left;display:flex;justify-content:space-between;border-color:'+c[3],onclick:function(){if(!c[1].length){toast('해당 조문이 없어요');return}startDeck(c[0],c[1],null,true)}},
+      h('span',null,c[0]),h('span',{style:'color:var(--sub);font-weight:500'},c[1].length+'개'+(function(){var lp=cfg.pos&&cfg.pos[c[0]];return lp&&c[1].some(function(a){return a.no===lp})?' · 이어서 '+lp:''})())));
   });
   w.append(g3);
   w.append(h('p',{class:'hint'},'모르면 V(두 번째면 W) · 알면 표시 하나 지우기(W→V→없음) · 완벽하면 X로 빼기. O는 표시 없는 조문(안 본 것 포함)이고, 복습은 W부터 나와요.'));
