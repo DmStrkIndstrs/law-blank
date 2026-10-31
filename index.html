@@ -80,14 +80,6 @@ var A=D.map(function(a){
 var TOTALBL=A.reduce(function(n,a){return n+a.nb},0);
 var CHAPS=[];A.forEach(function(a){if(CHAPS.indexOf(a.chap)<0)CHAPS.push(a.chap)});
 
-var SESS=[
- ['1주차 월','법 1~28의4',1,0],['1주차 수','법 28의5~42의2',28,5],['1주차 금','법 42의3~61',42,3],
- ['2주차 월','법 62~82 (시행령 9~82 주차)',62,0],['2주차 수','법 83~99',83,0],['2주차 금','법 99의2~121',99,2],
- ['3주차 월','법 122~132의15',122,0],['3주차 수','법 132의16~140',132,16],['3주차 금','법 140의2~177',140,2],
- ['4주차 월','법 178~199',178,0],['4주차 수','법 200~209',200,0],['4주차 금','법 210~232',210,0]
-];
-function sessOf(a){var r=0;for(var i=0;i<SESS.length;i++){if(SESS[i][2]*1000+SESS[i][3]<=a.key)r=i}return r}
-
 var LS={
   get:function(k,d){try{var v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},
   set:function(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
@@ -334,15 +326,6 @@ function run(q,i,tok,upd){
 /* ---------- views ---------- */
 var deck=null,view='home';
 
-function sessionRec(){
-  if(!cfg.start)return -1;
-  var p=cfg.start.split('-');if(p.length<3)return -1;
-  var t=new Date(+p[0],+p[1]-1,+p[2]);
-  var sd=Math.floor((t.getTime()-t.getTimezoneOffset()*6e4)/864e5);
-  var d=today()-sd;if(d<0)return 0;
-  var w=Math.floor(d/7),dow=d%7,slot=dow<2?0:dow<4?1:2;
-  return Math.max(0,Math.min(11,w*3+slot));
-}
 function startDeck(label,list,pos){
   if(!list.length){toast('해당 조건에 맞는 조문이 없어요');return}
   if(pos==null){pos=0;for(var i=0;i<list.length;i++){if(!isDone(list[i])){pos=i;break}}}
@@ -377,19 +360,6 @@ function home(){
   w.append(h('button',{class:'btn ghost',style:'margin-top:8px'+(wl.length?';border-color:var(--ng);color:var(--ng)':''),onclick:function(){startDeck('✗ 틀린 조문',wrongList(),0)}},
     wl.length?('✗ 틀린 조문만 다시 보기 ('+wl.length+'개)'):'✗ 틀린 조문이 없어요'));
   w.append(h('p',{class:'hint'},'틀린 조문은 ✓ 외움을 누르면 목록에서 빠져요.'));
-
-  w.append(h('h2',null,'한달 1독 진도표 (특허)'));
-  var rec=sessionRec(),g=h('div',{class:'grid'});
-  SESS.forEach(function(s,i){
-    var list=pool(function(a){return sessOf(a)===i});
-    var nm=h('span',null,s[0]);
-    var r=rowEl(s[0]+(i===rec?'  ':''),s[1]+' · '+list.length+'개',list,function(){startDeck(s[0]+' · '+s[1],list)},i===rec?' rec':'');
-    if(i===rec)r.querySelector('b').append(h('span',{class:'tag'},'오늘'));
-    g.append(r);
-  });
-  w.append(g);
-  w.append(h('div',{class:'set'},h('label',null,'1주차 월요일'),h('input',{type:'date',value:cfg.start||'',onchange:function(e){cfg.start=e.target.value;saveCfg();home()}})));
-  w.append(h('p',{class:'hint'},'시작일(1주차 월요일)을 넣으면 오늘 볼 범위를 표시해요. 화·목·토는 직전 회차로 잡아요. 상표는 이 앱에 없어요.'));
 
   w.append(h('h2',null,'장별'));
   var g2=h('div',{class:'grid'});
