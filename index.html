@@ -100,7 +100,7 @@ var LS={
 };
 var prog=LS.get('pt_prog',{});
 var resetAt=LS.get('pt_reset',0);
-var cfg=Object.assign({fs:17,star:0,start:'',rate:1,t:0,pos:{},fabLeft:false},LS.get('pt_cfg',{}));
+var cfg=Object.assign({fs:17,star:0,start:'',rate:1,t:0,pos:{},fabLeft:false,round:1},LS.get('pt_cfg',{}));
 function applyCfg(){document.documentElement.style.setProperty('--fs',cfg.fs+'px')}
 function saveCfg(){cfg.t=Date.now();LS.set('pt_cfg',cfg);applyCfg();touch()}
 applyCfg();
@@ -377,11 +377,21 @@ function home(){
   w.append(chips);
 
   w.append(h('h2',null,'복습 (WOX)'));
+  var rd=cfg.round||1,bigRound=[3,5,7].indexOf(rd)>=0;
+  var setRound=function(n){if(n<1)return;cfg.round=n;saveCfg();home()};
+  var rdup=h('button',{class:'btn',style:'flex:1;padding:10px;font-size:15px',onclick:function(){
+    if(rdup.dataset.arm!=='1'){rdup.dataset.arm='1';rdup.textContent=(rd+1)+'회독으로 올릴까요? 한 번 더 누르면 변경';setTimeout(function(){if(rdup.isConnected){rdup.dataset.arm='';rdup.textContent='다음 회독으로 ›'}},3500);return}
+    setRound(rd+1)}},'다음 회독으로 ›');
+  w.append(h('div',{style:'display:flex;gap:8px;align-items:center;margin-bottom:8px'},
+    h('div',{style:'flex:1;font-size:18px;font-weight:800'},rd+'회독째'+(bigRound?'  ⭐':'')),
+    rd>1?h('button',{class:'btn ghost',style:'width:auto;padding:10px 14px;font-size:15px',onclick:function(){setRound(rd-1)},'aria-label':'회독 내리기'},'‹'):null,
+    rdup));
+  if(bigRound)w.append(h('p',{class:'hint',style:'color:var(--acc);font-weight:700'},rd+'회독은 O까지 다시 보는 회차예요 → 아래 W+O 보기로 보세요. 잊은 조문은 V로 다시 표시!'));
   var live=pool(), lW=live.filter(function(a){return st(a.no).v===2}), lV=live.filter(function(a){return st(a.no).v===1}), lO=live.filter(function(a){return st(a.no).v===0});
   var g3=h('div',{class:'grid',style:'grid-template-columns:1fr;gap:8px'});
   [['V만 보기',lV,lV,'var(--acc)'],['W+V 보기',lW.concat(lV),lW.concat(lV),'var(--ng)'],['W+O 보기',lW.concat(lO),lW.concat(lO),'var(--ok)']].forEach(function(c){
     g3.append(h('button',{class:'btn ghost',style:'text-align:left;display:flex;justify-content:space-between;border-color:'+c[3],onclick:function(){if(!c[1].length){toast('해당 조문이 없어요');return}startDeck(c[0],c[1],null,true)}},
-      h('span',null,c[0]),h('span',{style:'color:var(--sub);font-weight:500'},c[1].length+'개'+(function(){var lp=cfg.pos&&cfg.pos[c[0]];return lp&&c[1].some(function(a){return a.no===lp})?' · 이어서 '+lp:''})())));
+      h('span',null,c[0]+((bigRound&&c[0]==='W+O 보기')?'  ⭐ 이번 회독':'')),h('span',{style:'color:var(--sub);font-weight:500'},c[1].length+'개'+(function(){var lp=cfg.pos&&cfg.pos[c[0]];return lp&&c[1].some(function(a){return a.no===lp})?' · 이어서 '+lp:''})())));
   });
   w.append(g3);
   w.append(h('p',{class:'hint'},'모르면 V(두 번째면 W) · 알면 표시 하나 지우기(W→V→없음) · 완벽하면 X로 빼기. O는 표시 없는 조문(안 본 것 포함)이고, 복습은 W부터 나와요.'));
