@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>특허법 조문 빈칸</title>
 <style>
-:root{--bg:#f6f4ee;--card:#fff;--tx:#1d1d1f;--sub:#6b6b70;--line:#e2dfd6;--acc:#1f5fbf;--acc2:#0b3f8f;--bl:#d6e2f5;--op:#e7f0ff;--ok:#2e8b57;--ng:#d2453d;--fs:17px}
-@media (prefers-color-scheme:dark){:root{--bg:#14161a;--card:#1e2127;--tx:#e8e8ea;--sub:#9a9aa2;--line:#2c3038;--acc:#7fb0ff;--acc2:#a9ccff;--bl:#2b3a57;--op:#22304a;--ok:#5cc189;--ng:#ff7a70}}
+:root{--bg:#f6f4ee;--card:#fff;--tx:#1d1d1f;--sub:#6b6b70;--line:#e2dfd6;--acc:#1f5fbf;--acc2:#0b3f8f;--bl:#d6e2f5;--op:#e7f0ff;--ok:#2e8b57;--ng:#d2453d;--fs:17px;--fabtx:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#14161a;--card:#1e2127;--tx:#e8e8ea;--sub:#9a9aa2;--line:#2c3038;--acc:#7fb0ff;--acc2:#a9ccff;--bl:#2b3a57;--op:#22304a;--ok:#5cc189;--ng:#ff7a70;--fabtx:#0b1b33}}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;-webkit-text-size-adjust:100%}
 body{padding:env(safe-area-inset-top) 0 0}
@@ -59,6 +59,11 @@ input[type=search],input[type=date],select{width:100%;padding:11px 12px;border-r
 .done{text-align:center;padding:40px 10px}
 .done .big{font-size:44px}
 .hint{font-size:12.5px;color:var(--sub);margin:6px 2px}
+.fab{position:fixed;bottom:calc(86px + env(safe-area-inset-bottom));width:68px;height:68px;border-radius:50%;border:0;background:var(--acc);color:var(--fabtx);font-weight:800;font-size:12.5px;line-height:1.25;box-shadow:0 4px 14px rgba(0,0,0,.28);opacity:.93;z-index:7;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+.fab .big{font-size:22px;line-height:1}
+.fab:active{transform:scale(.93)}
+.fab.R{right:14px}.fab.L{left:14px}
+.fab.done{background:var(--ok);color:#fff}
 .sw{touch-action:pan-y;min-height:100vh;min-height:100dvh}
 .sw .wrap{min-height:calc(100dvh - 140px)}
 .slider{will-change:transform}
@@ -95,7 +100,7 @@ var LS={
 };
 var prog=LS.get('pt_prog',{});
 var resetAt=LS.get('pt_reset',0);
-var cfg=Object.assign({fs:17,star:0,start:'',rate:1,t:0,pos:{}},LS.get('pt_cfg',{}));
+var cfg=Object.assign({fs:17,star:0,start:'',rate:1,t:0,pos:{},fabLeft:false},LS.get('pt_cfg',{}));
 function applyCfg(){document.documentElement.style.setProperty('--fs',cfg.fs+'px')}
 function saveCfg(){cfg.t=Date.now();LS.set('pt_cfg',cfg);applyCfg();touch()}
 applyCfg();
@@ -413,6 +418,9 @@ function home(){
   var xc=h('input',{type:'checkbox'});xc.checked=!!cfg.showX;
   xc.addEventListener('change',function(){cfg.showX=xc.checked;saveCfg();home()});
   w.append(h('div',{class:'set'},h('label',null,'X 조문'),h('span',null,xc,' 장별 보기에 X(제외) 조문도 포함')));
+  var lc=h('input',{type:'checkbox'});lc.checked=!!cfg.fabLeft;
+  lc.addEventListener('change',function(){cfg.fabLeft=lc.checked;saveCfg()});
+  w.append(h('div',{class:'set'},h('label',null,'빈칸 버튼'),h('span',null,lc,' 왼손잡이 (버튼을 왼쪽에 표시)')));
   var fs=h('input',{type:'range',min:14,max:26,value:cfg.fs});
   fs.addEventListener('input',function(){cfg.fs=+fs.value;saveCfg()});
   w.append(h('div',{class:'set'},h('label',null,'글자 크기'),fs));
@@ -449,10 +457,16 @@ function study(keepTts){
   if(deck.chap){if(!cfg.pos)cfg.pos={};if(cfg.pos[deck.label]!==a.no){cfg.pos[deck.label]=a.no;saveCfg()}}
   if(!keepTts)stopTTS();
   var cnt=h('div',{class:'cnt'});
+  var fab=null;
   var card=h('article',{class:'card'});
   var upd=function(){
     var all=card.querySelectorAll('.blank').length,o=card.querySelectorAll('.blank.open').length;
     cnt.textContent='빈칸 '+o+' / '+all;
+    if(typeof fab!=='undefined'&&fab){
+      fab.textContent='';
+      if(!all||o===all){fab.classList.add('done');fab.append(h('span',{class:'big'},'›'),h('span',null,'다음 조문'))}
+      else{fab.classList.remove('done');fab.append(h('span',{class:'big'},'👆'),h('span',null,(o+1)+' / '+all))}
+    }
     if(togBtn)togBtn.textContent=(all&&o===all)?'🙈 가리기':'👁 전체';
   };
   var togBtn=null;
@@ -493,7 +507,17 @@ function study(keepTts){
     h('button',{class:'ok',onclick:function(){var b=st(a.no).v;markRight(a.no);if(b)toast(b===2?'W → V':'V 지움');step(1)}},st(a.no).v?'✓ 하나 지움':'✓ 맞음')));
   var xb=h('button',{class:'btn ghost',style:'margin-top:6px;font-size:14px;padding:10px'},st(a.no).x?'X 해제 (다시 보기)':'X 완벽해요 · 앞으로 빼기');
   xb.addEventListener('click',function(){var on=markX(a.no);toast(on?'X: 장별 보기·복습에서 빠져요':'X 해제');step(1)});
-  var w=h('div',{class:'sw'},top,h('div',{class:'wrap',style:'padding-top:4px'},h('div',{class:'slider'},card,cnt,xb)),bb);
+  fab=h('button',{class:'fab '+(cfg.fabLeft?'L':'R'),'aria-label':'다음 빈칸 보기'});
+  var nextBlank=function(){
+    var all=card.querySelectorAll('.blank'),el=null;
+    for(var i=0;i<all.length;i++){if(!all[i].classList.contains('open')){el=all[i];break}}
+    if(!el){step(1);return}
+    el.classList.add('open');upd();
+    var r=el.getBoundingClientRect();
+    if(r.bottom>window.innerHeight-170||r.top<70)el.scrollIntoView({block:'center',behavior:'smooth'});
+  };
+  fab.addEventListener('click',nextBlank);
+  var w=h('div',{class:'sw'},top,h('div',{class:'wrap',style:'padding-top:4px;padding-bottom:160px'},h('div',{class:'slider'},card,cnt,xb)),bb,fab);
 
   var holder=w.querySelector('.slider');
   var x0=null,y0=null,t0=0,lock=null,dxm=0;
